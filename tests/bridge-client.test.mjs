@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Bridge} from '../dist/modules/bridge-client.js';
+
+test('bridge requests only hint the address space when the URL does not reveal it',async()=>{
+  const originalFetch=globalThis.fetch,calls=[];
+  globalThis.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify({ok:true,protocol:'stripr/1'}),{headers:{'Content-Type':'application/json'}});};
+  try{
+    await new Bridge('http://localhost:8787').health();
+    await new Bridge('http://127.0.0.1:8787').health();
+    await new Bridge('http://192.168.1.20:8787').health();
+    await new Bridge('http://bridge.internal:8787').health();
+    assert.deepEqual(calls.map(call=>call.options.targetAddressSpace),[undefined,undefined,undefined,'local']);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('bridge token stays optional in requests',async()=>{
+  const originalFetch=globalThis.fetch,headers=[];
+  globalThis.fetch=async(url,options)=>{headers.push(options.headers);return new Response(JSON.stringify({ok:true,protocol:'stripr/1'}),{headers:{'Content-Type':'application/json'}});};
+  try{
+    await new Bridge('http://192.168.1.20:8787').health();
+    await new Bridge('http://192.168.1.20:8787','secret').health();
+    assert.equal(headers[0].Authorization,undefined);
+    assert.equal(headers[1].Authorization,'Bearer secret');
+  }finally{globalThis.fetch=originalFetch;}
+});

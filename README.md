@@ -37,7 +37,7 @@ node bridge/server.mjs --target 192.168.1.50
 
 Replace `192.168.1.50` with the **Art-Net controller's** IP address. The bridge uses unicast UDP on port 6454, refreshes configured universes at 30 fps, and lights only one pixel at a time. Your controller must accept ArtDMX and have its physical outputs patched to the same universes/channels as StripR. The reference adapter covers RGB strips and six RGB channel orders, Art-Net port-addresses 0–255, up to 128 strips and 10,000 total LEDs. It does not configure the controller itself.
 
-Copy the printed bridge token into the app. On the same computer use `http://localhost:8787`. On a phone, use the **bridge computer's LAN IP**, for example `https://192.168.1.20:8787`; `localhost` on the phone points to the phone itself.
+On the same computer use `http://localhost:8787`. On a phone, use the **bridge computer's LAN IP**, for example `https://192.168.1.20:8787`; `localhost` on the phone points to the phone itself. Token authentication is disabled by default, so leave the token field empty.
 
 No npm installation is needed. To test the API without hardware:
 
@@ -53,7 +53,7 @@ The bridge accepts the Pages origin `https://benkuper.github.io` and its loopbac
 node bridge/server.mjs --target 192.168.1.50 --origin https://your-site.example
 ```
 
-Run `node bridge/server.mjs --help` for listen address, port and TLS options. `STRIPR_TOKEN` can supply a stable token. Tokens are checked on every API endpoint and are never saved by the frontend. The bridge clears its outputs after **10 seconds** without a successful pixel command, and on normal shutdown. UDP acknowledgment only confirms sending; camera detection verifies the physical light.
+Run `node bridge/server.mjs --help` for listen address, port and TLS options. Set `STRIPR_TOKEN` to opt into token authentication; when configured, it is checked on every API endpoint and is never saved by the frontend. Exact-origin CORS remains enforced with or without a token. The bridge clears its outputs after **10 seconds** without a successful pixel command, and on normal shutdown. UDP acknowledgment only confirms sending; camera detection verifies the physical light.
 
 ## Smartphone camera and HTTPS
 

@@ -7,7 +7,7 @@ This deliberately small API lets a browser control a local LED output implementa
 - Base URL: user-selected HTTP(S) origin, optionally with a path prefix.
 - Requests/responses: JSON; return a 2xx response containing `{"ok":true}` only **after applying** the command. The browser starts its configured settling delay after acknowledgment.
 - Errors: non-2xx JSON, `{"ok":false,"error":"Human-readable explanation"}`.
-- Token: `Authorization: Bearer TOKEN` on all API calls. Keep the token out of URLs and logs.
+- Token: optional. When the bridge is configured with `STRIPR_TOKEN`, send `Authorization: Bearer TOKEN` on all API calls. Keep the token out of URLs and logs. The reference bridge does not require authentication by default.
 - Respond to CORS preflight with an exact allowed `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods: GET, POST, OPTIONS`, `Access-Control-Allow-Headers: Content-Type, Authorization`, and `Vary: Origin`. The reference bridge additionally includes `Access-Control-Allow-Private-Network: true` for older PNA clients.
 - CORS must be applied to failures as well as successes for an allowed origin. Reject unapproved browser origins. The canonical Pages origin is `https://benkuper.github.io` (an origin has no `/StripR/` path).
 - Serve trusted HTTPS for browsers that require it. Modern Chromium local-network permission and legacy PNA are separate from ordinary CORS.
