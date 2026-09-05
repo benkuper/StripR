@@ -20,9 +20,48 @@ jobs:
           node-version: '22'
       - run: npm run check
       - run: npm test
+  bridge-executables:
+    name: Build ${{ matrix.platform }} bridge
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+            executable: stripr-bridge-linux
+            archive: build/StripR-bridge-Linux.tar.gz
+          - platform: macOS
+            os: macos-latest
+            executable: stripr-bridge-macos
+            archive: build/StripR-bridge-macOS.tar.gz
+          - platform: Windows
+            os: windows-latest
+            executable: stripr-bridge-windows.exe
+            archive: build/stripr-bridge-windows.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:bridge
+        env:
+          BRIDGE_ARTIFACT_NAME: ${{ matrix.executable }}
+      - name: Package bridge executable
+        if: runner.os != 'Windows'
+        run: tar -czf "${{ matrix.archive }}" -C build "${{ matrix.executable }}"
+      - name: Upload bridge executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: StripR-bridge-${{ matrix.platform }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: test
+    needs: [test, bridge-executables]
     runs-on: ubuntu-latest
     permissions:
       contents: read

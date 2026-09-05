@@ -24,3 +24,12 @@ test('bridge token stays optional in requests',async()=>{
     assert.equal(headers[1].Authorization,'Bearer secret');
   }finally{globalThis.fetch=originalFetch;}
 });
+
+test('bridge configuration includes strip type and universe policy',async()=>{
+  const originalFetch=globalThis.fetch,bodies=[];
+  globalThis.fetch=async(url,options)=>{bodies.push(JSON.parse(options.body));return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json'}});};
+  try{
+    await new Bridge('http://127.0.0.1:8787').configure([{id:'s',count:1,type:'rgba',universe:3,channel:511,universePolicy:'channel',order:'grb',points:[]}]);
+    assert.deepEqual(bodies[0],{strips:[{id:'s',count:1,type:'rgba',universe:3,channel:511,universePolicy:'channel',order:'grb'}]});
+  }finally{globalThis.fetch=originalFetch;}
+});

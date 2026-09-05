@@ -26,15 +26,15 @@ This deliberately small API lets a browser control a local LED output implementa
 ```json
 {
   "strips":[
-    {"id":"strip-a","count":60,"universe":0,"channel":1,"order":"rgb"},
-    {"id":"strip-b","count":120,"universe":1,"channel":1,"order":"grb"}
+    {"id":"strip-a","count":60,"type":"rgb","universe":0,"channel":1,"universePolicy":"led","order":"rgb"},
+    {"id":"strip-b","count":120,"type":"rgba","universe":1,"channel":1,"universePolicy":"channel","order":"grb"}
   ]
 }
 ```
 
-Replace the current strip configuration and black out both old and new configured outputs. `id` is a stable string. Physical LED indices are **zero-based**. Art-Net universe/port-address is **zero-based**; DMX channel is **one-based**. The reference bridge validates overlapping channels, IDs, RGB orders, integer values and resource limits before configuring anything.
+Replace the current strip configuration and black out both old and new configured outputs. `id` is a stable string. Physical LED indices are **zero-based**. Art-Net universe/port-address is **zero-based**; DMX address (`channel`) is **one-based**, from 1 to 512. `type` is `rgb` (3 channels per LED) or `rgba` (4 channels per LED). `order` controls the first three color channels; RGBA always places alpha last. The reference bridge drives alpha at 255 while identifying an RGBA LED. The optional fields `type` and `universePolicy` default to `rgb` and `led` for compatibility with earlier v1 clients.
 
-An RGB triplet never crosses a universe boundary. A strip beginning on channel 1 fits 170 LEDs (channels 1–510), skips 511–512, then resumes at channel 1 in the next universe. An unusual start channel fills as many whole RGB pixels as fit, then likewise resumes at channel 1. The shared `pixelAddress()` function in `dist/modules/model.js` is the canonical patch rule for both bridge and exports.
+With the default `universePolicy: "led"`, an LED never crosses a universe boundary. A strip beginning at address 1 fits 170 RGB LEDs (addresses 1–510) or 128 RGBA LEDs (addresses 1–512), then resumes with the next LED at address 1 in the next universe. An unusual first address fits as many whole LEDs as possible and skips unused tail channels. `universePolicy: "channel"` instead continues immediately into the next universe and may split one LED across the boundary. The shared `pixelAddress()` and `pixelChannels()` functions in `dist/modules/model.js` are the canonical patch rules.
 
 A custom bridge may ignore Art-Net fields if it maps `id` to another physical output, but it must honor `count`, `id`, and pixel exclusivity. Document any different hardware addressing clearly.
 
@@ -44,7 +44,7 @@ A custom bridge may ignore Art-Net fields if it maps `id` to another physical ou
 {"strip":"strip-a","index":17,"rgb":[160,160,160]}
 ```
 
-**Black out every other configured pixel, then illuminate only this LED.** `rgb` always represents red, green and blue, independent of hardware channel order. Each value is an integer from 0 through 255. Apply the configured channel order at the output adapter.
+**Black out every other configured pixel, then illuminate only this LED.** `rgb` always represents red, green and blue, independent of hardware channel order or strip type. Each value is an integer from 0 through 255. Apply the configured channel order at the output adapter; for RGBA, append a full alpha value.
 
 An index may arrive out of order: smart scanning probes endpoints and interior points before scanning the remaining LEDs. Do not assume monotonically increasing indices.
 

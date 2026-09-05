@@ -1,4 +1,4 @@
-import { pixelAddress, validateProject, totals } from './model.js';
+import { pixelAddress, pixelChannels, validateProject, totals } from './model.js';
 
 export const escapeXML = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 const param=(name,type,value)=>`<Param name="${name}" T="${type}" default="${escapeXML(value)}" value="${escapeXML(value)}"/>`;
@@ -14,6 +14,7 @@ const rect=(tag,x,y,w,h)=>`<${tag} orientation="0">${[[x,y],[x+w,y],[x+w,y+h],[x
 export function exportResolume(raw) {
   const p=validateProject(raw), stats=totals(p);
   if(!stats.mapped) throw new Error('Map at least one LED before exporting.');
+  if(p.strips.some(s=>s.points.some((point,index)=>point&&new Set(pixelChannels(s,index).map(a=>a.universe)).size>1))) throw new Error('Resolume export cannot split one LED across two universes. Use the “Next LED” universe policy or adjust the first address.');
   const {width,height,sampleSize,gamma}=p.settings, groups=new Map(); let uid=Date.now();
   p.strips.forEach(s=>s.points.forEach((point,index)=>{
     if(!point) return;
@@ -31,7 +32,7 @@ export function exportResolume(raw) {
 <Params name="Input">${choice('Input Source','STRING','0:1')}${param('Input Opacity','BOOL',1)}${param('Input Bypass/Solo','BOOL',1)}${choice('Fixture','STRING',fixtureId)}${range('Start Channel',channel,1,131072)}${choice('Filter Mode','INT32',0)}</Params>
 <Params name="Output">${param('Flip','UINT8',0)}${levels()}</Params>
 ${rect('InputRect',x,y,size,size)}${rect('OutputRect',-.5,-.5,1,1)}
-<FixtureInstance name="FixtureInstance"><Fixture name="Fixture" uuid="${fixtureId}" fixtureName="StripR RGB pixel"><Params name="Params"><ParamFixturePixels storage="0" name="Pixels">${range('Width',1,1,512)}${range('Height',1,1,512)}${choice('Color Format','STRING',s.order)}${choice('Distribution','INT32',170)}${range('Gamma',gamma,1,3)}</ParamFixturePixels></Params></Fixture></FixtureInstance>
+<FixtureInstance name="FixtureInstance"><Fixture name="Fixture" uuid="${fixtureId}" fixtureName="StripR ${s.type.toUpperCase()} pixel"><Params name="Params"><ParamFixturePixels storage="0" name="Pixels">${range('Width',1,1,512)}${range('Height',1,1,512)}${choice('Color Format','STRING',s.order+(s.type==='rgba'?'a':''))}${choice('Distribution','INT32',170)}${range('Gamma',gamma,1,3)}</ParamFixturePixels></Params></Fixture></FixtureInstance>
 </DmxSlice>`;
     }).join('\n');
     return `<DmxScreen name="${escapeXML(title)}" uniqueId="${++uid}" LumiverseId="${screenIndex}">

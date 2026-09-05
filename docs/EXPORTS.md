@@ -7,7 +7,7 @@ JSON is the editable project and simplest integration format. It contains:
 - `version: 1`, project name, export timestamp, and `demo` provenance.
 - A `coordinates` description: top-left origin, normalized units, X right, Y down.
 - Scan/output settings, including straight-line optimization and tolerance.
-- Ordered strips with stable ID, name, count, display color, RGB order and DMX patch.
+- Ordered strips with stable ID, name, count, display color, RGB/RGBA type, RGB order, first LED universe/address, and universe jump policy.
 - A fixed-length `points` array for every strip. Its **zero-based array index is the physical LED index**. An unmapped LED is `null`.
 - Each non-null point: `{x, y, confidence, source}`. Sources are `scan`, `manual`, `demo`, or `interpolated`. Confidence is a detector heuristic, not a calibrated statistical probability. An inferred coordinate inherits the minimum probe confidence; it has not been independently observed.
 
@@ -17,9 +17,9 @@ Unknown JSON fields are discarded during import. Strip patches, dimensions, limi
 
 ## Resolume Arena Advanced Output XML
 
-The exporter emits an `XmlState` → `ScreenSetup` → `screens` document with `CurrentCompositionTextureSize`. Each occupied Art-Net universe becomes a `DmxScreen` (Lumiverse), and every mapped LED becomes a `DmxSlice`. Every slice embeds a one-pixel `FixtureInstance`/`ParamFixturePixels` definition including RGB order and gamma. No external fixture library needs to be installed.
+The exporter emits an `XmlState` → `ScreenSetup` → `screens` document with `CurrentCompositionTextureSize`. Each occupied Art-Net universe becomes a `DmxScreen` (Lumiverse), and every mapped LED becomes a `DmxSlice`. Every slice embeds a one-pixel `FixtureInstance`/`ParamFixturePixels` definition including RGB/RGBA format, channel order and gamma. No external fixture library needs to be installed.
 
-Input rectangles are centered on each normalized LED coordinate, scaled to composition dimensions and bounded to the composition. Sampling area is configurable. The output fixture is one RGB pixel. `Start Channel` uses the shared hardware address calculation, including whole-pixel universe spanning. Universe port-address `U` is encoded as subnet `floor(U / 16)` and universe `U % 16`, supporting 0–255. Net addressing above 255 is outside this release's supported range.
+Input rectangles are centered on each normalized LED coordinate, scaled to composition dimensions and bounded to the composition. Sampling area is configurable. The output fixture is one RGB or RGBA pixel. `Start Channel` uses the shared hardware address calculation, including whole-LED universe jumps. Universe port-address `U` is encoded as subnet `floor(U / 16)` and universe `U % 16`, supporting 0–255. Net addressing above 255 is outside this release's supported range. Because a Resolume fixture belongs to one Lumiverse, XML export rejects a mapped LED that uses the channel-continuous policy to split across two universes; choose the whole-LED policy or adjust the first address before exporting.
 
 Missing LEDs are omitted from XML, but all remaining addresses are retained. Their absence does not compact or shift the patch. Inferred line positions are exported like measured positions; use JSON to preserve provenance. An incomplete/demo export is labeled in the app before download. TargetIP starts as `TT_DISABLED`: choose the real destination after inspecting the preset in Arena.
 

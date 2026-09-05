@@ -2,13 +2,56 @@
 import http from 'node:http';
 import https from 'node:https';
 import dgram from 'node:dgram';
-import {readFile} from 'node:fs/promises';
-import {resolve,extname,sep} from 'node:path';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {resolve,extname,sep,dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {timingSafeEqual} from 'node:crypto';
-import {validatePatch,pixelAddress,integer} from '../dist/modules/model.js';
+import {homedir} from 'node:os';
+import {createInterface} from 'node:readline/promises';
+import {getAsset,isSea} from 'node:sea';
+import {validatePatch,pixelChannels,integer} from '../dist/modules/model.js';
 
-const ROOT=fileURLToPath(new URL('../dist/',import.meta.url));
+const ROOT=isSea()?null:fileURLToPath(new URL('../dist/',import.meta.url));
+const TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
+async function staticAsset(urlPath){
+  const relative=decodeURIComponent(urlPath==='/'?'index.html':urlPath.replace(/^\/+/,''));
+  if(!relative||relative.split('/').includes('..')||relative.includes('\\'))return null;
+  if(isSea()){try{return Buffer.from(getAsset('dist/'+relative));}catch{return null;}}
+  const local=resolve(ROOT,relative),prefix=ROOT.endsWith(sep)?ROOT:ROOT+sep;
+  if(local!==ROOT&&!local.startsWith(prefix))return null;
+  return readFile(local).catch(()=>null);
+}
+
+export function targetConfigPath({platform=process.platform,env=process.env,home=homedir()}={}){
+  if(platform==='win32')return join(env.APPDATA||join(home,'AppData','Roaming'),'StripR','config.json');
+  if(platform==='darwin')return join(home,'Library','Application Support','StripR','config.json');
+  return join(env.XDG_CONFIG_HOME||join(home,'.config'),'stripr','config.json');
+}
+export async function readLastTarget(path=targetConfigPath()){
+  try{const value=JSON.parse(await readFile(path,'utf8')).lastTarget;return typeof value==='string'?value.trim():'';}catch{return '';}
+}
+export async function rememberTarget(target,path=targetConfigPath()){
+  await mkdir(dirname(path),{recursive:true,mode:0o700});
+  await writeFile(path,JSON.stringify({lastTarget:target},null,2)+'\n',{encoding:'utf8',mode:0o600});
+}
+export async function promptForTarget(lastTarget='',{input=process.stdin,output=process.stdout}={}){
+  const terminal=Boolean(lastTarget&&input.isTTY&&output.isTTY),rl=createInterface({input,output});
+  try{
+    const answer=rl.question(`Art-Net controller target${lastTarget&&!terminal?' ['+lastTarget+']':''}: `);
+    if(terminal)rl.write(lastTarget);
+    return (await answer).trim()||lastTarget;
+  }finally{rl.close();}
+}
+export async function selectTarget(options,{ask=promptForTarget,configFile=targetConfigPath(),warn=message=>process.stderr.write(message+'\n')}={}){
+  if(options.demo)return null;
+  let target=options.target?.trim(),lastTarget='';
+  if(!target){
+    lastTarget=await readLastTarget(configFile);
+    while(!target){target=(await ask(lastTarget)).trim()||lastTarget;if(!target)warn('Enter the Art-Net controller address.');}
+  }
+  try{await rememberTarget(target,configFile);}catch(e){warn(`Could not remember target: ${e.message}`);}
+  return target;
+}
 export function artDmxPacket(universe,data,sequence=1){
   if(!Number.isInteger(universe)||universe<0||universe>32767)throw new Error('Invalid Art-Net universe.');
   if(data.length>512)throw new Error('DMX data exceeds 512 channels.');
@@ -17,8 +60,8 @@ export function artDmxPacket(universe,data,sequence=1){
 }
 export class ArtNetAdapter {
   constructor(target){this.target=target;this.socket=dgram.createSocket('udp4');this.frames=new Map();this.sequence=1;this.lastError=null;this.socket.on('error',e=>{this.lastError=e;});this.interval=setInterval(()=>this.flush().catch(e=>{this.lastError=e;}),1000/30);this.interval.unref();}
-  async configure(strips){await this.blackout();this.frames.clear();for(const s of strips)for(let i=0;i<s.count;i++){const {universe}=pixelAddress(s,i);if(!this.frames.has(universe))this.frames.set(universe,Buffer.alloc(512));}}
-  async pixel(strip,index,rgb){for(const data of this.frames.values())data.fill(0);const {universe,channel}=pixelAddress(strip,index),colors={r:rgb[0],g:rgb[1],b:rgb[2]},data=this.frames.get(universe);strip.order.split('').forEach((c,i)=>data[channel-1+i]=colors[c]);await this.flush();}
+  async configure(strips){await this.blackout();this.frames.clear();for(const s of strips)for(let i=0;i<s.count;i++)for(const {universe} of pixelChannels(s,i))if(!this.frames.has(universe))this.frames.set(universe,Buffer.alloc(512));}
+  async pixel(strip,index,rgb){for(const data of this.frames.values())data.fill(0);const colors={r:rgb[0],g:rgb[1],b:rgb[2],a:255},values=(strip.order+(strip.type==='rgba'?'a':'')).split('').map(c=>colors[c]);pixelChannels(strip,index).forEach(({universe,channel},i)=>this.frames.get(universe)[channel-1]=values[i]);await this.flush();}
   async blackout(){for(const data of this.frames.values())data.fill(0);await this.flush();}
   async flush(){if(this.lastError){const e=this.lastError;this.lastError=null;throw e;}const sequence=this.sequence;this.sequence=this.sequence%255+1;await Promise.all([...this.frames].map(([universe,data])=>new Promise((res,rej)=>this.socket.send(artDmxPacket(universe,data,sequence),6454,this.target,e=>e?rej(e):res()))));}
   async close(){clearInterval(this.interval);try{await this.blackout();}finally{try{this.socket.close();}catch{}}}
@@ -51,11 +94,8 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
       if(req.method==='OPTIONS'){res.writeHead(204);return res.end();}
       if(!path.startsWith('/api/')){
         if(req.method!=='GET'&&req.method!=='HEAD')return send(405,{ok:false,error:'Method not allowed.'});
-        const local=resolve(ROOT,'.'+decodeURIComponent(path==='/'?'/index.html':path));
-        if(!local.startsWith(ROOT.endsWith(sep)?ROOT:ROOT+sep))return send(403,{ok:false,error:'Invalid path.'});
-        const data=await readFile(local).catch(()=>null);if(!data)return send(404,{ok:false,error:'File not found.'});
-        const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
-        res.writeHead(200,{'Content-Type':types[extname(local)]||'application/octet-stream'});return res.end(req.method==='HEAD'?undefined:data);
+        const data=await staticAsset(path);if(!data)return send(404,{ok:false,error:'File not found.'});
+        res.writeHead(200,{'Content-Type':TYPES[extname(path==='/'?'index.html':path)]||'application/octet-stream'});return res.end(req.method==='HEAD'?undefined:data);
       }
       if(token&&!equalToken(req.headers.authorization||'',`Bearer ${token}`))return send(401,{ok:false,error:'Invalid bridge token. Copy the token printed by the bridge.'});
       if(path==='/api/health'&&req.method==='GET')return send(200,{ok:true,protocol:'stripr/1',name:'StripR local bridge',adapter:adapterName,watchdogMs});
@@ -67,7 +107,7 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
         if(path==='/api/configure'){
           validatePatch(body.strips);
           await adapter.blackout();active=false;
-          await adapter.configure(body.strips);strips=body.strips.map(({id,count,universe,channel,order})=>({id,count,universe,channel,order}));
+          await adapter.configure(body.strips);strips=body.strips.map(({id,count,type='rgb',universe,channel,universePolicy='led',order})=>({id,count,type,universe,channel,universePolicy,order}));
         } else if(path==='/api/pixel'){
           const strip=strips.find(s=>s.id===body.strip);if(!strip)throw new Error('Unknown strip. Configure the bridge first.');
           if(typeof body.index!=='number')throw new Error('LED index must be a number.');
@@ -83,22 +123,22 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
   const server=tls?https.createServer(tls,handler):http.createServer(handler);server.requestTimeout=10000;server.headersTimeout=10000;
   return {server,token,async close(){closed=true;clearInterval(watchdog);await queue;await adapter.close();await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});}};
 }
-function args(values){const out={origins:[]};for(let i=0;i<values.length;i++){const key=values[i];if(key==='--demo')out.demo=true;else if(key==='--help')out.help=true;else if(['--target','--host','--port','--cert','--key','--origin'].includes(key)){const value=values[++i];if(!value||value.startsWith('--'))throw new Error(`Missing value for ${key}`);if(key==='--origin')out.origins.push(value);else out[key.slice(2)]=value;}else throw new Error(`Unknown option: ${key}`);}return out;}
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{
-    const options=args(process.argv.slice(2));
-    if(options.help){process.stdout.write('StripR bridge (Node.js 22+)\n  --target IP     Art-Net unicast controller address\n  --demo          Run API without physical LED output\n  --host ADDRESS  Listen address (default 0.0.0.0)\n  --port PORT     Listen port (default 8787)\n  --cert FILE --key FILE  Enable HTTPS\n  --origin URL    Additional allowed site origin; may be repeated\n  STRIPR_TOKEN environment variable enables optional token authentication.\n');process.exit(0);}
-    if(!options.demo&&!options.target)throw new Error('Specify --target CONTROLLER_IP for Art-Net, or --demo to test the API.');
-    if(options.demo&&options.target)throw new Error('Choose --demo or --target, not both.');
-    if(!!options.cert!==!!options.key)throw new Error('HTTPS requires both --cert and --key.');
-    const port=integer(options.port||8787,1,65535,'Port'),host=options.host||'0.0.0.0',scheme=options.cert?'https':'http';
-    const tls=options.cert?{cert:await readFile(options.cert),key:await readFile(options.key)}:null;
-    const adapter=options.demo?new DemoAdapter():new ArtNetAdapter(options.target);
-    const origins=['https://benkuper.github.io',`${scheme}://localhost:${port}`,`${scheme}://127.0.0.1:${port}`,...options.origins];
-    origins.forEach(o=>{if(new URL(o).origin!==o)throw new Error('Origins must contain scheme and hostname only, plus port when needed.');});
-    const bridge=createBridge({adapter,adapterName:options.demo?'demo':'artnet',token:process.env.STRIPR_TOKEN||undefined,origins,tls});
-    bridge.server.on('error',e=>{process.stderr.write(e.message+'\n');process.exit(1);});
-    bridge.server.listen(port,host,()=>{process.stdout.write(`StripR bridge · ${options.demo?'SIMULATION — no hardware output':'Art-Net → '+options.target}\nAddress on this computer: ${scheme}://localhost:${port}\nFrom a phone: use this computer’s LAN IP with port ${port}.\nToken authentication: ${bridge.token?'enabled; use '+bridge.token:'disabled (set STRIPR_TOKEN to enable)'}\nAllowed origins: ${origins.join(', ')}\nOutputs clear after 10 seconds without pixel commands. Ctrl+C to stop.\n`);});
-    let stopping=false;const shutdown=async()=>{if(stopping)return;stopping=true;await bridge.close();process.exit(0);};process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);
-  }catch(e){process.stderr.write(e.message+'\n');process.exit(1);}
+export function parseArgs(values){const out={origins:[]};for(let i=0;i<values.length;i++){const key=values[i];if(key==='--demo')out.demo=true;else if(key==='--help')out.help=true;else if(['--target','--host','--port','--cert','--key','--origin'].includes(key)){const value=values[++i];if(!value||value.startsWith('--'))throw new Error(`Missing value for ${key}`);if(key==='--origin')out.origins.push(value);else out[key.slice(2)]=value;}else throw new Error(`Unknown option: ${key}`);}return out;}
+export async function runCli(values=process.argv.slice(2),{input=process.stdin,output=process.stdout,error=process.stderr,configFile=targetConfigPath()}={}){
+  const options=parseArgs(values);
+  if(options.help){output.write('StripR bridge\n  --target ADDRESS  Art-Net unicast controller address (prompted when omitted)\n  --demo            Run API without physical LED output\n  --host ADDRESS    Listen address (default 0.0.0.0)\n  --port PORT       Listen port (default 8787)\n  --cert FILE --key FILE  Enable HTTPS\n  --origin URL      Additional allowed site origin; may be repeated\n  The last Art-Net target is remembered as the next prompt default.\n  STRIPR_TOKEN environment variable enables optional token authentication.\n');return null;}
+  if(options.demo&&options.target)throw new Error('Choose --demo or --target, not both.');
+  options.target=await selectTarget(options,{ask:last=>promptForTarget(last,{input,output}),configFile,warn:message=>error.write(message+'\n')});
+  if(!!options.cert!==!!options.key)throw new Error('HTTPS requires both --cert and --key.');
+  const port=integer(options.port||8787,1,65535,'Port'),host=options.host||'0.0.0.0',scheme=options.cert?'https':'http';
+  const tls=options.cert?{cert:await readFile(options.cert),key:await readFile(options.key)}:null;
+  const adapter=options.demo?new DemoAdapter():new ArtNetAdapter(options.target);
+  const origins=['https://benkuper.github.io',`${scheme}://localhost:${port}`,`${scheme}://127.0.0.1:${port}`,...options.origins];
+  origins.forEach(o=>{if(new URL(o).origin!==o)throw new Error('Origins must contain scheme and hostname only, plus port when needed.');});
+  const bridge=createBridge({adapter,adapterName:options.demo?'demo':'artnet',token:process.env.STRIPR_TOKEN||undefined,origins,tls});
+  bridge.server.on('error',e=>{error.write(e.message+'\n');process.exitCode=1;});
+  bridge.server.listen(port,host,()=>{output.write(`StripR bridge · ${options.demo?'SIMULATION — no hardware output':'Art-Net → '+options.target}\nAddress on this computer: ${scheme}://localhost:${port}\nFrom a phone: use this computer’s LAN IP with port ${port}.\nToken authentication: ${bridge.token?'enabled; use '+bridge.token:'disabled (set STRIPR_TOKEN to enable)'}\nAllowed origins: ${origins.join(', ')}\nOutputs clear after 10 seconds without pixel commands. Ctrl+C to stop.\n`);});
+  let stopping=false;const shutdown=async()=>{if(stopping)return;stopping=true;await bridge.close();};process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);
+  return bridge;
 }
+if(!isSea()&&process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))runCli().catch(e=>{process.stderr.write(e.message+'\n');process.exitCode=1;});
