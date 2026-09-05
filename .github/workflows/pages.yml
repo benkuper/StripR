@@ -2,6 +2,7 @@ name: Test and deploy StripR
 on:
   push:
     branches: [main]
+    tags: ['**']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -20,8 +21,8 @@ jobs:
           node-version: '22'
       - run: npm run check
       - run: npm test
-  bridge-executables:
-    name: Build ${{ matrix.platform }} bridge
+  app-executables:
+    name: Build ${{ matrix.platform }} app
     needs: test
     strategy:
       fail-fast: false
@@ -29,16 +30,24 @@ jobs:
         include:
           - platform: Linux
             os: ubuntu-latest
-            executable: stripr-bridge-linux
-            archive: build/StripR-bridge-Linux.tar.gz
-          - platform: macOS
+            executable: stripr-linux-x64
+            archive: build/StripR-Linux-x64.tar.gz
+            artifact: StripR-Linux-x64
+          - platform: macOS (Apple silicon)
             os: macos-latest
-            executable: stripr-bridge-macos
-            archive: build/StripR-bridge-macOS.tar.gz
+            executable: stripr-macos-arm64
+            archive: build/StripR-macOS-arm64.tar.gz
+            artifact: StripR-macOS-arm64
+          - platform: macOS (Intel)
+            os: macos-15-intel
+            executable: stripr-macos-x64
+            archive: build/StripR-macOS-x64.tar.gz
+            artifact: StripR-macOS-x64
           - platform: Windows
             os: windows-latest
-            executable: stripr-bridge-windows.exe
-            archive: build/stripr-bridge-windows.exe
+            executable: StripR-Windows-x64.exe
+            archive: build/StripR-Windows-x64.exe
+            artifact: StripR-Windows-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -47,21 +56,21 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run build:bridge
+      - run: npm run build
         env:
-          BRIDGE_ARTIFACT_NAME: ${{ matrix.executable }}
-      - name: Package bridge executable
+          STRIPR_ARTIFACT_NAME: ${{ matrix.executable }}
+      - name: Package app executable
         if: runner.os != 'Windows'
         run: tar -czf "${{ matrix.archive }}" -C build "${{ matrix.executable }}"
-      - name: Upload bridge executable
+      - name: Upload app executable
         uses: actions/upload-artifact@v4
         with:
-          name: StripR-bridge-${{ matrix.platform }}
+          name: ${{ matrix.artifact }}
           path: ${{ matrix.archive }}
           if-no-files-found: error
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: [test, bridge-executables]
+    needs: [test, app-executables]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,3 +89,20 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [test, app-executables]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: StripR-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create GitHub Release and attach apps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "StripR $GITHUB_REF_NAME"

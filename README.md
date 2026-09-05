@@ -1,13 +1,13 @@
 # StripR
 
-A camera-based LED pixel scanner and mapper. A focused dark workspace, designed for desktop and mobile. The entire mapper runs in your browser, with no account, cloud processing, frontend dependencies, or build step.
+A camera-based LED pixel scanner and mapper. The downloadable StripR executable contains the complete local app: web interface, project storage, camera mapper, and Art-Net bridge. It opens in your browser with no account, cloud processing, frontend dependencies, Node.js installation, or separate website required.
 
 **[Open StripR](https://benkuper.github.io/StripR/)** · [Bridge API](docs/API.md) · [Export formats](docs/EXPORTS.md)
 
 ## Simple projects stay simple
 
 1. Enter **strips × LEDs each**, then choose **Set**. For mixed lengths, use **Add strips** or edit individual strips.
-2. Enable your camera. Connect your local bridge with its address and token.
+2. Enable your camera. The downloaded app connects to its embedded bridge automatically; from the hosted site, enter the StripR computer’s address.
 3. Start scanning. Keep the camera fixed, and the whole setup visible.
 4. Review the map and export JSON or Resolume Advanced Output XML.
 
@@ -23,13 +23,15 @@ Other working features:
 - Dark-frame subtraction and connected-component detection; ambiguous reflections remain unmapped.
 - Pause, resume, stop, missing-only scans, and automatic stop when the page is hidden.
 - Per-pixel inspector, click/touch placement, drag corrections and hardware identification.
+- Shift-click ranges, Ctrl/Cmd-click toggles, marquee selection, and group move/scale/rotate transforms.
+- 100-step undo/redo history for map, strip, scan, project, and settings edits, plus standard keyboard shortcuts.
 - Reference-photo manual mapping and an explicitly labeled simulated demo.
 - Device-local autosave, JSON import/export, and embedded RGB/RGBA fixtures in Resolume XML.
 - No photos, camera frames or bridge tokens in exported projects or autosave.
 
-## Run the local LED bridge
+## Run the complete local app
 
-Download the Windows, macOS, or Linux artifact from the latest successful [Test and deploy StripR](https://github.com/benkuper/StripR/actions/workflows/pages.yml) run. Extract it (including the `.tar.gz` on macOS/Linux), then launch `stripr-bridge-windows.exe`, `stripr-bridge-macos`, or `stripr-bridge-linux`. The bridge asks for the Art-Net controller address:
+Download the Windows, macOS, or Linux app from the latest [GitHub Release](https://github.com/benkuper/StripR/releases). Extract the `.tar.gz` on macOS/Linux, then launch `StripR-Windows-x64.exe`, `stripr-macos-arm64` / `stripr-macos-x64`, or `stripr-linux-x64`. StripR asks for the Art-Net controller address, starts the embedded web interface and bridge, and opens the local app in your default browser:
 
 ```text
 Art-Net controller target: 192.168.1.50
@@ -38,25 +40,25 @@ Art-Net controller target: 192.168.1.50
 The last target is remembered and prefilled the next time. You can still provide it directly from a terminal:
 
 ```sh
-stripr-bridge-linux --target 192.168.1.50
+stripr-linux-x64 --target 192.168.1.50
 ```
 
 Replace `192.168.1.50` with the **Art-Net controller's** IP address. The bridge uses unicast UDP on port 6454, refreshes configured universes at 30 fps, and lights only one pixel at a time. Your controller must accept ArtDMX and have its physical outputs patched to the same universes/channels as StripR. The reference adapter covers RGB and RGBA strips, six RGB channel orders, both whole-LED and channel-continuous universe jumps, Art-Net port-addresses 0–255, up to 128 strips and 10,000 total LEDs. It does not configure the controller itself.
 
 On the same computer use `http://localhost:8787`. On a phone, use the **bridge computer's LAN IP**, for example `https://192.168.1.20:8787`; `localhost` on the phone points to the phone itself. Token authentication is disabled by default, so leave the token field empty.
 
-No Node.js or npm installation is needed for these executables. To test the API without hardware:
+No Node.js, npm, or internet connection is needed after downloading the executable. To run the complete app without hardware output:
 
 ```sh
-stripr-bridge-linux --demo
+stripr-linux-x64 --demo
 ```
 
-That also serves the app at `http://localhost:8787`. A demo bridge does not produce camera-visible light: use **Explore a demo setup** in the interface for simulated scans.
+Use `--no-open` when you do not want StripR to launch a browser automatically. The local app is served at `http://localhost:8787`. Simulation mode does not produce camera-visible light: use **Explore a demo setup** in the interface for simulated scans.
 
 The bridge accepts the Pages origin `https://benkuper.github.io` and its loopback app origin by default. For another frontend origin, add it explicitly:
 
 ```sh
-stripr-bridge-linux --target 192.168.1.50 --origin https://your-site.example
+stripr-linux-x64 --target 192.168.1.50 --origin https://your-site.example
 ```
 
 The filename varies by operating system; Windows adds `.exe`. Run it with `--help` for listen address, port and TLS options. Set `STRIPR_TOKEN` to opt into token authentication; when configured, it is checked on every API endpoint and is never saved by the frontend. Exact-origin CORS remains enforced with or without a token. The bridge clears its outputs after **10 seconds** without a successful pixel command, and on normal shutdown. UDP acknowledgment only confirms sending; camera detection verifies the physical light.
@@ -74,7 +76,7 @@ One option is a locally trusted certificate from [mkcert](https://github.com/Fil
 ```sh
 mkcert -install
 mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 192.168.1.20
-stripr-bridge-linux --target 192.168.1.50 --cert cert.pem --key key.pem
+stripr-linux-x64 --target 192.168.1.50 --cert cert.pem --key key.pem
 ```
 
 The phone also needs to trust the issuing CA. `mkcert -CAROOT` prints the folder containing `rootCA.pem`. On your own iPhone/iPad, transfer that **certificate**, install the profile, and enable its full trust in Settings as described in [mkcert's mobile instructions](https://github.com/FiloSottile/mkcert#mobile-devices). Never transfer `rootCA-key.pem` or commit private keys. Then enter `https://192.168.1.20:8787` and the token in StripR. Visit that HTTPS origin directly to check certificate trust if connection fails. A trusted certificate for your own local hostname is another option.
@@ -83,7 +85,7 @@ To serve the app itself from a LAN HTTPS bridge origin, also allow that exact or
 
 ## GitHub Pages
 
-The included workflow checks the app and runs tests, builds self-contained bridge executables on Windows, macOS, and Linux, then publishes only `dist/` to Pages. Each executable embeds the browser app and a Node.js runtime. All asset links are relative, so `/StripR/` works without a bundler base-path setting. The local bridge itself is never deployed to Pages; GitHub Pages cannot access UDP hardware or run a server with UDP hardware access.
+The included workflow checks the app and runs tests, builds self-contained StripR apps on Windows, Intel/Apple-silicon macOS, and Linux, then publishes `dist/` to Pages. Each executable embeds the browser interface, Art-Net bridge, and Node.js runtime. Pushing any tag creates a versioned GitHub Release with all four platform downloads attached. All asset links are relative, so `/StripR/` also works without a bundler base-path setting. The Art-Net server itself is never deployed to Pages; GitHub Pages cannot access UDP hardware or run a server.
 
 First-time repository setup:
 
@@ -99,15 +101,17 @@ GitHub's normal workflow token cannot enable Pages for a new repository; the sou
 npm run check
 npm test
 npm start
-npm run build:bridge
+npm run build
 ```
 
-Development from source requires Node.js 22 or newer and `npm install`. The first two commands check JavaScript syntax, imports, assets and DOM IDs, then test the real HTTP bridge, authentication/CORS, target memory, blackout watchdog, ArtDMX encoding, detection, line fitting, patch boundaries, and export data. `npm start` serves the app with a demo bridge. `npm run build:bridge` creates a native executable for the current operating system in `build/`. Source files are authored directly in `dist/`; it is tracked and must not be deleted as disposable build output.
+Development from source requires Node.js 22 or newer and `npm install`. The first two commands check JavaScript syntax, imports, assets and DOM IDs, then test the real HTTP bridge, authentication/CORS, target memory, blackout watchdog, ArtDMX encoding, detection, editing transforms, line fitting, patch boundaries, and export data. `npm start` serves the app with a demo bridge. `npm run build` creates the complete native app for the current operating system in `build/`. Source files are authored directly in `dist/`; it is tracked and must not be deleted as disposable build output.
 
 ```
 dist/                 Browser app (static, no dependencies)
   modules/            Model, detection, line fitting, camera, API client, XML
-bridge/server.mjs     Node HTTP(S) server + Art-Net adapter
+bridge/app.mjs        Single-executable app entry point
+bridge/server.mjs     Embedded HTTP(S) UI server + Art-Net adapter
+scripts/build-app.mjs Native app builder; embeds every dist asset
 scripts/check.mjs     Static validation
 tests/               Automated core and bridge tests
 docs/                API and export contracts

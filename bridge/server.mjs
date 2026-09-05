@@ -9,6 +9,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {homedir} from 'node:os';
 import {createInterface} from 'node:readline/promises';
 import {getAsset,isSea} from 'node:sea';
+import {spawn} from 'node:child_process';
 import {validatePatch,pixelChannels,integer} from '../dist/modules/model.js';
 
 const ROOT=isSea()?null:fileURLToPath(new URL('../dist/',import.meta.url));
@@ -41,6 +42,13 @@ export async function promptForTarget(lastTarget='',{input=process.stdin,output=
     if(terminal)rl.write(lastTarget);
     return (await answer).trim()||lastTarget;
   }finally{rl.close();}
+}
+export function launchBrowser(url,{platform=process.platform,spawnProcess=spawn,env=process.env}={}){
+  try{
+    const command=platform==='win32'?(env.ComSpec||'cmd.exe'):platform==='darwin'?'open':'xdg-open';
+    const args=platform==='win32'?['/d','/s','/c','start','""',url]:[url];
+    const child=spawnProcess(command,args,{detached:true,stdio:'ignore',windowsHide:true});child.once?.('error',()=>{});child.unref();return true;
+  }catch{return false;}
 }
 export async function selectTarget(options,{ask=promptForTarget,configFile=targetConfigPath(),warn=message=>process.stderr.write(message+'\n')}={}){
   if(options.demo)return null;
@@ -84,7 +92,7 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
   const serial=fn=>{const result=queue.then(fn);queue=result.catch(()=>{});return result;};
   const watchdog=setInterval(()=>{if(active&&Date.now()-lastCommand>watchdogMs){active=false;serial(()=>adapter.blackout()).catch(e=>process.stderr.write('Watchdog blackout error: '+e.message+'\n'));}},250);watchdog.unref();
   const handler=async(req,res)=>{
-    const origin=req.headers.origin;const allowed=origin&&origins.includes(origin);
+    const origin=req.headers.origin,ownOrigin=`${req.socket.encrypted?'https':'http'}://${req.headers.host}`;const allowed=origin&&(origins.includes(origin)||origin===ownOrigin);
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Vary','Origin');
     if(allowed){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Access-Control-Allow-Private-Network','true');res.setHeader('Access-Control-Max-Age','600');}
     const send=(status,data)=>{if(!res.destroyed){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));}};
@@ -98,7 +106,7 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
         res.writeHead(200,{'Content-Type':TYPES[extname(path==='/'?'index.html':path)]||'application/octet-stream'});return res.end(req.method==='HEAD'?undefined:data);
       }
       if(token&&!equalToken(req.headers.authorization||'',`Bearer ${token}`))return send(401,{ok:false,error:'Invalid bridge token. Copy the token printed by the bridge.'});
-      if(path==='/api/health'&&req.method==='GET')return send(200,{ok:true,protocol:'stripr/1',name:'StripR local bridge',adapter:adapterName,watchdogMs});
+      if(path==='/api/health'&&req.method==='GET')return send(200,{ok:true,protocol:'stripr/1',name:'StripR local app',adapter:adapterName,watchdogMs});
       if(req.method!=='POST')return send(405,{ok:false,error:'Use POST for this endpoint.'});
       if(!['/api/configure','/api/pixel','/api/blackout'].includes(path))return send(404,{ok:false,error:'Unknown API endpoint.'});
       const body=await readJSON(req);
@@ -123,10 +131,10 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
   const server=tls?https.createServer(tls,handler):http.createServer(handler);server.requestTimeout=10000;server.headersTimeout=10000;
   return {server,token,async close(){closed=true;clearInterval(watchdog);await queue;await adapter.close();await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});}};
 }
-export function parseArgs(values){const out={origins:[]};for(let i=0;i<values.length;i++){const key=values[i];if(key==='--demo')out.demo=true;else if(key==='--help')out.help=true;else if(['--target','--host','--port','--cert','--key','--origin'].includes(key)){const value=values[++i];if(!value||value.startsWith('--'))throw new Error(`Missing value for ${key}`);if(key==='--origin')out.origins.push(value);else out[key.slice(2)]=value;}else throw new Error(`Unknown option: ${key}`);}return out;}
+export function parseArgs(values){const out={origins:[]};for(let i=0;i<values.length;i++){const key=values[i];if(key==='--demo')out.demo=true;else if(key==='--no-open')out.noOpen=true;else if(key==='--help')out.help=true;else if(['--target','--host','--port','--cert','--key','--origin'].includes(key)){const value=values[++i];if(!value||value.startsWith('--'))throw new Error(`Missing value for ${key}`);if(key==='--origin')out.origins.push(value);else out[key.slice(2)]=value;}else throw new Error(`Unknown option: ${key}`);}return out;}
 export async function runCli(values=process.argv.slice(2),{input=process.stdin,output=process.stdout,error=process.stderr,configFile=targetConfigPath()}={}){
   const options=parseArgs(values);
-  if(options.help){output.write('StripR bridge\n  --target ADDRESS  Art-Net unicast controller address (prompted when omitted)\n  --demo            Run API without physical LED output\n  --host ADDRESS    Listen address (default 0.0.0.0)\n  --port PORT       Listen port (default 8787)\n  --cert FILE --key FILE  Enable HTTPS\n  --origin URL      Additional allowed site origin; may be repeated\n  The last Art-Net target is remembered as the next prompt default.\n  STRIPR_TOKEN environment variable enables optional token authentication.\n');return null;}
+  if(options.help){output.write('StripR local app\n  The executable contains both the web interface and Art-Net bridge.\n  --target ADDRESS  Art-Net unicast controller address (prompted when omitted)\n  --demo            Run without physical LED output\n  --no-open         Do not open the app in the default browser\n  --host ADDRESS    Listen address (default 0.0.0.0)\n  --port PORT       Listen port (default 8787)\n  --cert FILE --key FILE  Enable HTTPS\n  --origin URL      Additional allowed site origin; may be repeated\n  The last Art-Net target is remembered as the next prompt default.\n  STRIPR_TOKEN environment variable enables optional token authentication.\n');return null;}
   if(options.demo&&options.target)throw new Error('Choose --demo or --target, not both.');
   options.target=await selectTarget(options,{ask:last=>promptForTarget(last,{input,output}),configFile,warn:message=>error.write(message+'\n')});
   if(!!options.cert!==!!options.key)throw new Error('HTTPS requires both --cert and --key.');
@@ -137,7 +145,7 @@ export async function runCli(values=process.argv.slice(2),{input=process.stdin,o
   origins.forEach(o=>{if(new URL(o).origin!==o)throw new Error('Origins must contain scheme and hostname only, plus port when needed.');});
   const bridge=createBridge({adapter,adapterName:options.demo?'demo':'artnet',token:process.env.STRIPR_TOKEN||undefined,origins,tls});
   bridge.server.on('error',e=>{error.write(e.message+'\n');process.exitCode=1;});
-  bridge.server.listen(port,host,()=>{output.write(`StripR bridge · ${options.demo?'SIMULATION — no hardware output':'Art-Net → '+options.target}\nAddress on this computer: ${scheme}://localhost:${port}\nFrom a phone: use this computer’s LAN IP with port ${port}.\nToken authentication: ${bridge.token?'enabled; use '+bridge.token:'disabled (set STRIPR_TOKEN to enable)'}\nAllowed origins: ${origins.join(', ')}\nOutputs clear after 10 seconds without pixel commands. Ctrl+C to stop.\n`);});
+  bridge.server.listen(port,host,()=>{const appUrl=`${scheme}://localhost:${port}`;output.write(`StripR · ${options.demo?'SIMULATION — no hardware output':'Art-Net → '+options.target}\nLocal app: ${appUrl}\nFrom a phone: use this computer’s LAN IP with port ${port}.\nToken authentication: ${bridge.token?'enabled; use '+bridge.token:'disabled (set STRIPR_TOKEN to enable)'}\nAllowed external origins: ${origins.join(', ')}\nOutputs clear after 10 seconds without pixel commands. Ctrl+C to stop.\n`);if(!options.noOpen&&!launchBrowser(appUrl))error.write(`Could not open a browser automatically. Open ${appUrl}\n`);});
   let stopping=false;const shutdown=async()=>{if(stopping)return;stopping=true;await bridge.close();};process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);
   return bridge;
 }

@@ -7,8 +7,8 @@ import {resolve,relative,sep} from 'node:path';
 const root=resolve(import.meta.dirname,'..'),outDir=resolve(root,'build');
 const suffix=process.platform==='win32'?'.exe':'';
 const platformName={win32:'windows',darwin:'macos'}[process.platform]||process.platform;
-const artifact=process.env.BRIDGE_ARTIFACT_NAME||`stripr-bridge-${platformName}-${process.arch}${suffix}`;
-const bundle=resolve(outDir,'bridge.cjs'),blob=resolve(outDir,'bridge.blob'),config=resolve(outDir,'sea-config.json'),executable=resolve(outDir,artifact);
+const artifact=process.env.STRIPR_ARTIFACT_NAME||`stripr-${platformName}-${process.arch}${suffix}`;
+const bundle=resolve(outDir,'stripr.cjs'),blob=resolve(outDir,'stripr.blob'),config=resolve(outDir,'sea-config.json'),executable=resolve(outDir,artifact);
 
 async function files(dir){
   const result=[];
@@ -32,7 +32,7 @@ async function removeWindowsSignature(path){
 }
 
 await mkdir(outDir,{recursive:true});
-await build({entryPoints:[resolve(root,'bridge/executable.mjs')],outfile:bundle,bundle:true,platform:'node',format:'cjs',target:'node22',define:{'import.meta.url':'"file:///stripr/bridge/server.mjs"'},logLevel:'info'});
+await build({entryPoints:[resolve(root,'bridge/app.mjs')],outfile:bundle,bundle:true,platform:'node',format:'cjs',target:'node22',define:{'import.meta.url':'"file:///stripr/bridge/server.mjs"'},logLevel:'info'});
 const assets={};
 for(const path of await files(resolve(root,'dist')))assets[relative(root,path).split(sep).join('/')]=path;
 await writeFile(config,JSON.stringify({main:bundle,output:blob,disableExperimentalSEAWarning:true,useSnapshot:false,useCodeCache:false,assets},null,2));
