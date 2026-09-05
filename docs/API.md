@@ -1,6 +1,6 @@
 # StripR bridge API · v1
 
-This deliberately small API lets a browser control a local LED output implementation. The included Node server supports Art-Net. Another implementation can use a microcontroller, serial output or a different LED library while keeping the same HTTP contract.
+This deliberately small API lets a browser control a local LED output implementation. The included Node server supports runtime-selectable Art-Net and sACN/E1.31 output. Another implementation can use a microcontroller, serial output or a different LED library while keeping the same HTTP contract.
 
 ## Transport
 
@@ -16,10 +16,18 @@ This deliberately small API lets a browser control a local LED output implementa
 ## GET /api/health
 
 ```json
-{"ok":true,"protocol":"stripr/1","name":"My LED bridge","adapter":"artnet","watchdogMs":10000}
+{"ok":true,"protocol":"stripr/1","name":"My LED bridge","adapter":"sacn","watchdogMs":10000,"output":{"protocol":"sacn","target":"wled.local","configured":true,"port":5568,"universeOffset":1}}
 ```
 
-`protocol` is required. `name`, `adapter` and `watchdogMs` describe the server. This must identify a compatible server, not merely return a generic HTML health page.
+`protocol` is required. `name`, `adapter` and `watchdogMs` describe the server. This must identify a compatible server, not merely return a generic HTML health page. The reference bridge's `output` object lets the browser inspect its current hardware output. `configured` is false until a target is selected; `universeOffset` is 1 for sACN and 0 for Art-Net.
+
+## POST /api/output
+
+```json
+{"protocol":"sacn","target":"wled.local"}
+```
+
+Select the reference bridge's hardware output at runtime. `protocol` is `artnet` or `sacn`; `target` is the unicast controller hostname or IPv4 address. Changing it blacks out and closes the previous UDP adapter, clears the active patch, starts the selected adapter, and remembers the choice on the bridge computer. Follow it with `POST /api/configure` before sending pixels. Bridges that advertise an `output` object from `/api/health` must implement this endpoint; clients retain compatibility with older fixed-output bridges that omit it.
 
 ## POST /api/configure
 
@@ -32,7 +40,7 @@ This deliberately small API lets a browser control a local LED output implementa
 }
 ```
 
-Replace the current strip configuration and black out both old and new configured outputs. `id` is a stable string. Physical LED indices are **zero-based**. Art-Net universe/port-address is **zero-based**; DMX address (`channel`) is **one-based**, from 1 to 512. `type` is `rgb` (3 channels per LED) or `rgba` (4 channels per LED). `order` controls the first three color channels; RGBA always places alpha last. The reference bridge drives alpha at 255 while identifying an RGBA LED. The optional fields `type` and `universePolicy` default to `rgb` and `led` for compatibility with earlier v1 clients.
+Replace the current strip configuration and black out both old and new configured outputs. `id` is a stable string. Physical LED indices are **zero-based**. Project universe/Art-Net port-address is **zero-based**; the sACN adapter adds 1 because E1.31 universes begin at 1. DMX address (`channel`) is **one-based**, from 1 to 512. `type` is `rgb` (3 channels per LED) or `rgba` (4 channels per LED). `order` controls the first three color channels; RGBA always places alpha last. The reference bridge drives alpha at 255 while identifying an RGBA LED. The optional fields `type` and `universePolicy` default to `rgb` and `led` for compatibility with earlier v1 clients.
 
 With the default `universePolicy: "led"`, an LED never crosses a universe boundary. A strip beginning at address 1 fits 170 RGB LEDs (addresses 1–510) or 128 RGBA LEDs (addresses 1–512), then resumes with the next LED at address 1 in the next universe. An unusual first address fits as many whole LEDs as possible and skips unused tail channels. `universePolicy: "channel"` instead continues immediately into the next universe and may split one LED across the boundary. The shared `pixelAddress()` and `pixelChannels()` functions in `dist/modules/model.js` are the canonical patch rules.
 
@@ -54,7 +62,7 @@ An index may arrive out of order: smart scanning probes endpoints and interior p
 {}
 ```
 
-Clear every configured output. This is idempotent. It is used for each dark baseline, after every measurement, on stop/error, and for manual blackout. Honor it even if the browser's preceding light request timed out. The reference bridge also refreshes black frames over Art-Net so a lost UDP packet can be corrected.
+Clear every configured output. This is idempotent. It is used for each dark baseline, after every measurement, on stop/error, and for manual blackout. Honor it even if the browser's preceding light request timed out. The reference bridge also refreshes black frames over Art-Net or sACN so a lost UDP packet can be corrected.
 
 ## Scan timing
 
@@ -62,4 +70,4 @@ For an individual measurement the client sends blackout, waits `darkDelay`, capt
 
 Frame processing uses a maximum width of 640 pixels. Threshold and component-area settings refer to this analysis resolution. Camera movement, automatic exposure changes, tiny/faint LEDs and reflections can affect detection. Missing results stay `null`; they never shift subsequent LED indices.
 
-The Art-Net adapter acknowledges UDP sends, not controller receipt. Actual physical illumination still needs to be verified by the camera. The reference bridge's watchdog is the fallback for lost tabs or failed blackout requests.
+The Art-Net and sACN adapters acknowledge UDP sends, not controller receipt. Actual physical illumination still needs to be verified by the camera. The reference bridge's watchdog is the fallback for lost tabs or failed blackout requests.

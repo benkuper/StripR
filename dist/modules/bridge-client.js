@@ -27,6 +27,7 @@ export class Bridge {
     return `${at} Check that it is running, reachable on this network, allowed through the firewall, and permits this site's CORS origin.`;
   }
   async health() {const r=await this.request('/api/health');if(r.protocol!=='stripr/1')throw new Error('This server does not support the StripR v1 API.');return r;}
+  output(protocol,target) {return this.request('/api/output',{protocol,target});}
   configure(strips) {return this.request('/api/configure',{strips:strips.map(({id,count,type,universe,channel,universePolicy,order})=>({id,count,type,universe,channel,universePolicy,order}))});}
   pixel(strip,index,rgb,signal) {return this.request('/api/pixel',{strip,index,rgb},signal);}
   blackout() {return this.request('/api/blackout',{});}

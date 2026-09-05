@@ -1,6 +1,6 @@
 # StripR
 
-A camera-based LED pixel scanner and mapper. The downloadable StripR executable contains the complete local app: web interface, project storage, camera mapper, and Art-Net bridge. It opens in your browser with no account, cloud processing, frontend dependencies, Node.js installation, or separate website required.
+A camera-based LED pixel scanner and mapper. The downloadable StripR executable contains the complete local app: web interface, project storage, camera mapper, and Art-Net/sACN bridge. It opens in your browser with no account, cloud processing, frontend dependencies, Node.js installation, or separate website required.
 
 **[Open StripR](https://benkuper.github.io/StripR/)** · [Bridge API](docs/API.md) · [Export formats](docs/EXPORTS.md)
 
@@ -31,19 +31,20 @@ Other working features:
 
 ## Run the complete local app
 
-Download the Windows, macOS, or Linux app from the latest [GitHub Release](https://github.com/benkuper/StripR/releases). Extract the `.tar.gz` on macOS/Linux, then launch `StripR-Windows-x64.exe`, `stripr-macos-arm64` / `stripr-macos-x64`, or `stripr-linux-x64`. StripR asks for the Art-Net controller address, starts the embedded web interface and bridge, and opens the local app in your default browser:
+Download the Windows, macOS, or Linux app from the latest [GitHub Release](https://github.com/benkuper/StripR/releases). Extract the `.tar.gz` on macOS/Linux, then launch `StripR-Windows-x64.exe`, `stripr-macos-arm64` / `stripr-macos-x64`, or `stripr-linux-x64`. StripR starts the embedded web interface and bridge, then opens the local app in your default browser. In **LED controller**, choose Art-Net or sACN/E1.31 and enter the controller's hostname or IP address.
 
-```text
-Art-Net controller target: 192.168.1.50
-```
-
-The last target is remembered and prefilled the next time. You can still provide it directly from a terminal:
+The bridge remembers the last protocol and target. You can also provide startup defaults from a terminal:
 
 ```sh
 stripr-linux-x64 --target 192.168.1.50
+stripr-linux-x64 --protocol sacn --target 192.168.1.50
 ```
 
-Replace `192.168.1.50` with the **Art-Net controller's** IP address. The bridge uses unicast UDP on port 6454, refreshes configured universes at 30 fps, and lights only one pixel at a time. Your controller must accept ArtDMX and have its physical outputs patched to the same universes/channels as StripR. The reference adapter covers RGB and RGBA strips, six RGB channel orders, both whole-LED and channel-continuous universe jumps, Art-Net port-addresses 0–255, up to 128 strips and 10,000 total LEDs. It does not configure the controller itself.
+Replace `192.168.1.50` with the **lighting controller's** address. The bridge uses unicast UDP, refreshes configured universes at 30 fps, and lights only one pixel at a time. Art-Net uses port 6454 and keeps StripR's zero-based universe number. sACN uses port 5568 and maps StripR universe 0 to E1.31 universe 1, universe 1 to E1.31 universe 2, and so on. The reference adapters cover RGB and RGBA strips, six RGB channel orders, both whole-LED and channel-continuous universe jumps, project universes 0–255, up to 128 strips and 10,000 total LEDs. They do not configure the controller itself.
+
+### WLED over sACN
+
+In WLED, open **Config → Sync Interfaces**, select **E1.31 (sACN)** for Network DMX input, leave multicast disabled for StripR's unicast output, and set the starting universe to **1** when the first StripR universe is **0**. Use **Multiple RGB** for RGB strips or **Multiple RGBW** for four-channel strips, and use the same start address as the StripR patch. Save and reboot WLED, then select **sACN / E1.31** and enter the WLED device address in StripR's LED controller panel. The default **Next LED** universe policy matches WLED's 170-RGB-pixel (510-channel) universe layout.
 
 On the same computer use `http://localhost:8787`. On a phone, use the **bridge computer's LAN IP**, for example `https://192.168.1.20:8787`; `localhost` on the phone points to the phone itself. Token authentication is disabled by default, so leave the token field empty.
 
@@ -85,7 +86,7 @@ To serve the app itself from a LAN HTTPS bridge origin, also allow that exact or
 
 ## GitHub Pages
 
-The included workflow checks the app and runs tests, builds self-contained StripR apps on Windows, Intel/Apple-silicon macOS, and Linux, then publishes `dist/` to Pages. Each executable embeds the browser interface, Art-Net bridge, and Node.js runtime. Pushing any tag creates a versioned GitHub Release with all four platform downloads attached. All asset links are relative, so `/StripR/` also works without a bundler base-path setting. The Art-Net server itself is never deployed to Pages; GitHub Pages cannot access UDP hardware or run a server.
+The included workflow checks the app and runs tests, builds self-contained StripR apps on Windows, Intel/Apple-silicon macOS, and Linux, then publishes `dist/` to Pages. Each executable embeds the browser interface, Art-Net/sACN bridge, and Node.js runtime. Pushing any tag creates a versioned GitHub Release with all four platform downloads attached. All asset links are relative, so `/StripR/` also works without a bundler base-path setting. The UDP bridge itself is never deployed to Pages; GitHub Pages cannot access UDP hardware or run a server.
 
 First-time repository setup:
 
@@ -104,13 +105,13 @@ npm start
 npm run build
 ```
 
-Development from source requires Node.js 22 or newer and `npm install`. The first two commands check JavaScript syntax, imports, assets and DOM IDs, then test the real HTTP bridge, authentication/CORS, target memory, blackout watchdog, ArtDMX encoding, detection, editing transforms, line fitting, patch boundaries, and export data. `npm start` serves the app with a demo bridge. `npm run build` creates the complete native app for the current operating system in `build/`. Source files are authored directly in `dist/`; it is tracked and must not be deleted as disposable build output.
+Development from source requires Node.js 22 or newer and `npm install`. The first two commands check JavaScript syntax, imports, assets and DOM IDs, then test the real HTTP bridge, authentication/CORS, output selection and memory, blackout watchdog, ArtDMX and E1.31 encoding, detection, editing transforms, line fitting, patch boundaries, and export data. `npm start` serves the app with a demo bridge. `npm run build` creates the complete native app for the current operating system in `build/`. Source files are authored directly in `dist/`; it is tracked and must not be deleted as disposable build output.
 
 ```
 dist/                 Browser app (static, no dependencies)
   modules/            Model, detection, line fitting, camera, API client, XML
 bridge/app.mjs        Single-executable app entry point
-bridge/server.mjs     Embedded HTTP(S) UI server + Art-Net adapter
+bridge/server.mjs     Embedded HTTP(S) UI server + Art-Net/sACN adapters
 scripts/build-app.mjs Native app builder; embeds every dist asset
 scripts/check.mjs     Static validation
 tests/               Automated core and bridge tests
@@ -123,6 +124,7 @@ Real camera/hardware capture and import into the proprietary Resolume applicatio
 
 - [Resolume DMX output and Lumiverses](https://resolume.com/support/en/dmx)
 - [Art-Net protocol](https://art-net.org.uk/downloads/art-net.pdf)
+- [WLED E1.31 / Art-Net setup](https://kno.wled.ge/interfaces/e1.31-dmx/)
 - [Camera API and secure contexts](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
 - [Chrome Local Network Access](https://developer.chrome.com/blog/local-network-access)
 

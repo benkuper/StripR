@@ -33,3 +33,13 @@ test('bridge configuration includes strip type and universe policy',async()=>{
     assert.deepEqual(bodies[0],{strips:[{id:'s',count:1,type:'rgba',universe:3,channel:511,universePolicy:'channel',order:'grb'}]});
   }finally{globalThis.fetch=originalFetch;}
 });
+
+test('bridge output selection sends protocol and controller target',async()=>{
+  const originalFetch=globalThis.fetch,calls=[];
+  globalThis.fetch=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json'}});};
+  try{
+    await new Bridge('http://127.0.0.1:8787').output('sacn','wled.local');
+    assert.equal(calls[0].url,'http://127.0.0.1:8787/api/output');
+    assert.deepEqual(calls[0].body,{protocol:'sacn',target:'wled.local'});
+  }finally{globalThis.fetch=originalFetch;}
+});
