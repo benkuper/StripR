@@ -31,6 +31,7 @@ export class Bridge {
   configure(strips) {return this.request('/api/configure',{strips:strips.map(({id,count,type,universe,channel,universePolicy,order})=>({id,count,type,universe,channel,universePolicy,order}))});}
   pixel(strip,index,rgb,signal) {return this.request('/api/pixel',{strip,index,rgb},signal);}
   blackout() {return this.request('/api/blackout',{});}
+  eosOsc(target,port,action,pixelMap=1) {return this.request('/api/eos/osc',{target,port,action,pixelMap});}
 }
 
 function isLoopback(hostname){return hostname==='localhost'||hostname.endsWith('.localhost')||hostname==='[::1]'||/^127(?:\.\d{1,3}){3}$/.test(hostname);}
