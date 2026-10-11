@@ -132,6 +132,28 @@ async function readJSON(req){
   const chunks=[];let length=0;for await(const chunk of req){length+=chunk.length;if(length>256*1024)throw Object.assign(new Error('Request too large.'),{status:413});chunks.push(chunk);}
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw Object.assign(new Error('Invalid JSON body.'),{status:400});}
 }
+export function oscString(value){
+  const data=Buffer.from(String(value)+'\0','utf8');
+  const padded=Buffer.alloc(Math.ceil(data.length/4)*4);data.copy(padded);return padded;
+}
+export function eosOscPacket(action,pixelMap=1){
+  if(action==='ping')return Buffer.concat([oscString('/eos/ping'),oscString(',')]);
+  if(action==='pixmap'){
+    integer(pixelMap,1,9999,'Pixel Map number');
+    const args=Buffer.alloc(4);args.writeInt32BE(pixelMap,0);
+    return Buffer.concat([oscString('/eos/pixmap'),oscString(',i'),args]);
+  }
+  throw new Error('Unsupported Eos OSC action.');
+}
+export async function sendEosOsc({target,port=8000,action='ping',pixelMap=1}){
+  if(typeof target!=='string'||!target.trim()||target.length>253||/[\\s/]/.test(target))throw new Error('Enter a valid Eos console hostname or IP address.');
+  integer(Number(port),1,65535,'Eos OSC port');
+  const packet=eosOscPacket(action,pixelMap),socket=dgram.createSocket('udp4');
+  try{
+    await new Promise((resolve,reject)=>{socket.once('error',reject);socket.send(packet,Number(port),target.trim(),error=>error?reject(error):resolve());});
+    return {sent:true,action,target:target.trim(),port:Number(port)};
+  }finally{socket.close();}
+}
 export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token='',origins=['https://benkuper.github.io'],tls=null,watchdogMs=10000}={}){
   let strips=[],lastCommand=0,active=false,queue=Promise.resolve(),closed=false;
   const serial=fn=>{const result=queue.then(fn);queue=result.catch(()=>{});return result;};
@@ -153,8 +175,9 @@ export function createBridge({adapter=new DemoAdapter(),adapterName='demo',token
       if(token&&!equalToken(req.headers.authorization||'',`Bearer ${token}`))return send(401,{ok:false,error:'Invalid bridge token. Copy the token printed by the bridge.'});
       if(path==='/api/health'&&req.method==='GET'){const output=adapter.info?.();return send(200,{ok:true,protocol:'stripr/1',name:'StripR local app',adapter:output?.protocol||adapterName,watchdogMs,...(output?{output}:{})});}
       if(req.method!=='POST')return send(405,{ok:false,error:'Use POST for this endpoint.'});
-      if(!['/api/output','/api/configure','/api/pixel','/api/blackout'].includes(path))return send(404,{ok:false,error:'Unknown API endpoint.'});
+      if(!['/api/output','/api/configure','/api/pixel','/api/blackout','/api/eos/osc'].includes(path))return send(404,{ok:false,error:'Unknown API endpoint.'});
       const body=await readJSON(req);
+      if(path==='/api/eos/osc'){const result=await sendEosOsc(body);return send(200,{ok:true,...result,note:'UDP send completed; this does not confirm that Eos received the message.'});}
       await serial(async()=>{
         if(closed)throw new Error('Bridge is closing.');
         if(path==='/api/output'){
