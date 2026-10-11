@@ -146,7 +146,7 @@ export function eosOscPacket(action,pixelMap=1){
   throw new Error('Unsupported Eos OSC action.');
 }
 export async function sendEosOsc({target,port=8000,action='ping',pixelMap=1}){
-  if(typeof target!=='string'||!target.trim()||target.length>253||/[\\s/]/.test(target))throw new Error('Enter a valid Eos console hostname or IP address.');
+  if(typeof target!=='string'||!target.trim()||target.length>253||/[\s/]/.test(target))throw new Error('Enter a valid Eos console hostname or IP address.');
   integer(Number(port),1,65535,'Eos OSC port');
   const packet=eosOscPacket(action,pixelMap),socket=dgram.createSocket('udp4');
   try{
