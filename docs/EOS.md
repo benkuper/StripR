@@ -6,7 +6,7 @@ StripR can export camera-mapped coordinates in Eos's documented Pixel Map CSV bl
 
 The export uses the `CHANNEL` column. **Those numbers must refer to channels already patched in your Eos show in the same physical LED order as the StripR strips.** StripR's DMX universe/address fields are not Eos channel numbers, so they are deliberately not substituted. Unmapped pixels are omitted from the coordinate rows, but their channel numbers remain reserved so later LEDs do not shift.
 
-Each point is scaled into a 1-based integer grid while preserving the layout's aspect ratio. StripR uses a top-left origin, with X increasing right and Y increasing down, matching the Eos online help coordinate description. Verify a small test map in your installed Eos version before importing a large show.
+Each point is scaled into a 1-based integer grid while preserving the layout's aspect ratio. ETC's CSV convention is unusual: `LOCATION_X` increases moving down the map, and `LOCATION_Y` increases moving right. The exporter accounts for this by mapping StripR camera Y to Eos `LOCATION_X`, and camera X to Eos `LOCATION_Y`. Verify a small test map in your installed Eos version before importing a large show.
 
 ## OSC
 
